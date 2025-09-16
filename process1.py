@@ -28,7 +28,7 @@ interest_queue = []
 #########################################################################################################
 
 def handle_client(conn, addr):
-    print("oioioio")
+    print("oi")
 
 def server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
