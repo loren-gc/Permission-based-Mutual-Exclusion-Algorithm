@@ -27,6 +27,14 @@ interest_queue = []
 
 #########################################################################################################
 
+def send_request(request):
+    s1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s1.connect((ip_geral, processes_ports[0]))
+    s2.connect((ip_geral, processes_ports[1]))
+    s1.sendall(request)
+    s2.sendall(request)
+
 def handle_client(conn, addr):
     print("oi")
 
