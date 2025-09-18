@@ -19,19 +19,19 @@ process_id = 0
 general_address = "127.0.0.1"
 processes_ports = [5051, 5052]
 
-ip_server = "127.0.0.1"
-port_server = 5050+process_id
+server_ip = "127.0.0.1"
+server_port = 5050+process_id
 
-# queue for communication between threads:
-interest_queue = []
+# global variable to keep track of the process interest on the resource ("yes", "no" or "using")
+interest = "no"
 
 #########################################################################################################
 
-def send_request(request):
+def send_requests(request):
     s1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s1.connect((ip_geral, processes_ports[0]))
-    s2.connect((ip_geral, processes_ports[1]))
+    s1.connect((general_address, processes_ports[0]))
+    s2.connect((general_address, processes_ports[1]))
     s1.sendall(request)
     s2.sendall(request)
 
@@ -40,7 +40,7 @@ def handle_client(conn, addr):
 
 def server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((ip_server, port_server))
+    server.bind((server_ip, server_port))
     server.listen()
     while True:
         conn, addr = server.accept()
@@ -48,15 +48,22 @@ def server():
         thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
         thread.start()
 
-def client():
+def client(): #sends the positive interest on the resource
     while True:
-        interest = input("type 'yes' if this process will use the RESOURCE\nElse, type 'no'\n")
-        global clock_local
+        resource = input("Type 'yes' if this process will use the RESOURCE\nElse, type 'no'\n\n")
+        global interest
         with lock:
-            clock_local += 1
+            interest = resource 
+        global local_clock
+        with lock:
+            local_clock += 1
         if interest == "yes":
-            interest_queue.append(True)
-            
+            request = {
+                'clock': local_clock,
+                'process_id': process_id
+            }
+            send_requests(request)
+        time.sleep(2)
     
 #################################################### MAIN ##################################################
 
