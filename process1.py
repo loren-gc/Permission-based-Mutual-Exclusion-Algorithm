@@ -1,3 +1,6 @@
+# Lorenzo Grippo Chiachio - 823917
+# João Vitor Seiji - 822767
+
 import socket
 import threading
 import queue
@@ -5,7 +8,7 @@ import json
 import time
 
 # local_clock:
-#       INCREMENT WHEN SENDING MESSAGE OR ACK
+#       INCREMENT WHEN SENDING MESSAGE OR ACK\NACK
 #       INCREMENT ON THE OCCURRENCE OF EVENTS
 
 #########################################################################################################
@@ -22,7 +25,7 @@ processes_ports = [5051, 5052]
 server_ip = "127.0.0.1"
 server_port = 5050+process_id
 
-# global variable to keep track of the process interest on the resource ("yes", "no" or "using")
+# global variable to keep track of the process interest on the resource ("yes", "no", "using" or "waiting")
 interest = "no"
 interest_queue = queue.PriorityQueue()
 message_counter = 0
@@ -34,36 +37,73 @@ def add_to_queue(item):
     with lock:
         interest_queue.put(item)
 
-def use_resource():
-    print("hey")
+def nack_to_next_in_line():
+    if interest_queue.empty():
+        return
+    item = interest_queue.get()
+    while item[2]["process_id"] != process_id:
+        item = interest_queue.get()
+    if interest_queue.empty():
+        return
+    next_in_line = interest_queue.get()
+    send_nack(general_address, next_in_line[2]["process_id"])
 
-def send_nack(destiny_address, destiny_port):
+def use_resource():
+    print("USING THE RESOURCE...")
+    global interest
+    with lock:
+        interest = "using"
+    time.sleep(10) #here, we SIMULATE the process using the resource
+    print("RESOURCE RELEASED\n")
+    with lock:
+        interest = "no"
+    interest_queue.queue.clear() #emptying the priority queue
+
+def inspect_queue():
+    global interest
+    if interest != "yes" or message_counter < processes_amount-1:
+        return
+    queue_head = interest_queue.get()
+    if queue_head[2]["process_id"] == process_id:
+        use_resource()
+        nack_to_next_in_line()
+    else:
+        with lock:
+            interest = "waiting"
+
+def send_nack(destiny_address, destiny_process_id):
+    global local_clock
+    with lock:
+        local_clock += 1
     nack = {
         "type": "nack",
+        "clock": local_clock,
         "process_id": process_id
     }
+    destiny_port = 5050 + destiny_process_id
     payload = json.dumps(nack).encode("utf-8") 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((destiny_address, destiny_port))
     s.sendall(payload)
 
-def handle_request(message):
-    item = [message["clock"], message["process_id"], message]
-    add_to_queue(item)
-    if message_counter == porcesses_amount:
-        use_resource()
-
 def handle_message(message): #it can be either a request or a nack
     global message_counter
     with lock:
         message_counter += 1
-    if interest == "yes" && message["type"] == "request":
-        handle_request(message)
-    elif interest == "no" && message["type"] == "request":
-        send_nack(general_ip, message["process_id"])
+    if message["type"] == "request":
+        if interest != "no":
+            item = [message["clock"], message["process_id"], message]
+            add_to_queue(item)
+        else:
+            send_nack(general_address, message["process_id"])
+    elif message["type"] == "nack":
+        if interest == "waiting":
+            use_resource()
+            nack_to_next_in_line()
+    inspect_queue()
 
 def clock_maintenance(foreign_clock):
-    global clock_local
+    global local_clock
     with lock:
         if foreign_clock > local_clock:
             local_clock = foreign_clock + 1
@@ -77,6 +117,23 @@ def handle_client(conn, addr):
     except json.JSONDecodeError:
         print(f"[{addr}] Error: Invalid JSON!")
 
+def send_requests(request):
+    global local_clock
+    with lock:
+        local_clock += 1
+    payload = json.dumps(request).encode("utf-8")
+    for i in range(0, processes_amount-1):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((general_address, processes_ports[i]))
+        s.sendall(payload)
+
+def wait_answers():
+    global message_counter
+    while message_counter < processes_amount-1 or interest != "no":
+        continue
+    with lock:
+        message_counter = 0
+
 def server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind((server_ip, server_port))
@@ -86,15 +143,6 @@ def server():
         # thread to handle the client:
         thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
         thread.start()
-
-def send_requests(request):
-    global local_clock
-    with lock:
-        local_clock += 1
-    for i in range(0, processes_amount-1):
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((general_address, processes_ports[i]))
-        s.sendall(request)
 
 def client(): #sends the positive interest on the resource
     while True:
@@ -114,6 +162,7 @@ def client(): #sends the positive interest on the resource
             send_requests(request)
             item = [request["clock"], process_id, request]
             add_to_queue(item)
+            wait_answers()
         time.sleep(2)
     
 #################################################### MAIN ##################################################
