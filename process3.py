@@ -11,18 +11,20 @@ import time
 #       INCREMENT WHEN SENDING MESSAGE OR ACK\NACK
 #       INCREMENT ON THE OCCURRENCE OF EVENTS
 
-
 #########################################################################################################
+
+# process variables
+process_id = 2
+processes_ports = [5050, 5051]
+
+################################################## from this line, the code is the same for all processes
 
 lock = threading.Lock()
 
 processes_amount = 3
 local_clock = 0
-process_id = 2
 
 general_address = "127.0.0.1"
-processes_ports = [5050, 5051]
-
 server_ip = "127.0.0.1"
 server_port = 5050+process_id
 
@@ -31,7 +33,7 @@ interest = "no"
 interest_queue = queue.PriorityQueue()
 message_counter = 0
 
-#########################################################################################################
+###################################### FUNCTIONS AND PROCEDURES ##########################################
 
 def add_to_queue(item):
     global interest_queue
