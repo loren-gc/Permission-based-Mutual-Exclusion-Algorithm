@@ -31,7 +31,7 @@ server_port = 5050+process_id
 # global variable to keep track of the process interest on the resource ("yes", "no", "using" or "waiting")
 interest = "no"
 interest_queue = queue.PriorityQueue()
-message_counter = 0
+ack_counter = 0
 
 ###################################### FUNCTIONS AND PROCEDURES ##########################################
 
@@ -51,6 +51,12 @@ def nack_to_next_in_line():
     next_in_line = interest_queue.get()
     send_nack(general_address, next_in_line[2]["process_id"])
 
+def wait_for_use_of_resource():
+    global interest
+    with lock:
+        while interest == "using":
+            continue
+
 def use_resource():
     print("USING THE RESOURCE...")
     global interest
@@ -64,7 +70,7 @@ def use_resource():
 
 def inspect_queue():
     global interest
-    if interest != "yes" or message_counter < processes_amount-1:
+    if interest != "yes" or ack_counter < processes_amount-1:
         return
     queue_head = interest_queue.get()
     if queue_head[2]["process_id"] == process_id:
@@ -89,17 +95,22 @@ def send_nack(destiny_address, destiny_process_id):
     s.connect((destiny_address, destiny_port))
     s.sendall(payload)
 
-def handle_message(message): #it can be either a request or a nack
-    global message_counter
-    with lock:
-        message_counter += 1
+def handle_message(message): #it can be either a request or a nackd
+    global ack_counter
     if message["type"] == "request":
-        if interest != "no":
+        if interest == "no":
+            send_nack(general_address, message["process_id"])
+        elif interest == "using":
             item = [message["clock"], message["process_id"], message]
             add_to_queue(item)
-        else:
+            wait_for_use_of_resource()
             send_nack(general_address, message["process_id"])
-    elif message["type"] == "nack":
+        else:
+            item = [message["clock"], message["process_id"], message]
+            add_to_queue(item)
+    elif message["type"] == "nack": ### TEMOS QUE VERIFICAR SE O REMETENTE DO NACK ESTÁ NÁ FILA DE PROCESSOS E REMOVÊ-LO SE FOR O CASO!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        with lock:
+            ack_counter += 1
         if interest == "waiting":
             use_resource()
             nack_to_next_in_line()
@@ -131,11 +142,11 @@ def send_requests(request):
         s.sendall(payload)
 
 def wait_answers():
-    global message_counter
-    while message_counter < processes_amount-1 or interest != "no":
+    global ack_counter
+    while ack_counter < processes_amount-1 or interest != "no":
         continue
     with lock:
-        message_counter = 0
+        ack_counter = 0
 
 def server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
